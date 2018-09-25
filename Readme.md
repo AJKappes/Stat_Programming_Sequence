@@ -1,1 +1,1 @@
-This repository only holds various exercises from Econometrics II
+This repository only holds various exercises from Econometrics II. Follow https://nbviewer.jupyter.org/github/AJKappes/512_MetricsII/tree/master/ for viewing notebooks (renders plotly graphs, LaTex formatting, etc.).
