@@ -3,6 +3,8 @@ library(reshape2)
 library(Synth)
 library(dplyr, warn.conflicts = FALSE)
 
+# Synthetic control estimation #
+
 df <- read.csv('synth_smoking.csv')
 
 # b #
