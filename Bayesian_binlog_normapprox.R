@@ -10,7 +10,23 @@ remove(list = objects())
 library(ggplot2)
 library(latex2exp)
 
-# pseudo data functions resulting from expansion
+#### observed data ###
+
+df_bovine <- read.csv('~/research/africa/Nutrient_Demand/nd_R/df_bovine.csv')
+y <- matrix(df_bovine$AnimalVaccinated)
+y[which(y == 77)] <- 0
+X <- matrix(cbind(1,
+                  df_bovine$AnimalTreated,
+                  df_bovine$livincome,
+                  df_bovine$OffFarmNetIncome),
+            nrow = nrow(df_bovine))
+# change 'unkown' value to 0
+X[which(X[, 2] == 99), 2] <- 0
+
+
+### define functions and conduct optimization ###
+
+# pseudodata functions resulting from expansion
 z_gen <- function(x, b, y, n = length(y)) {
   
   eta <- x%*%b
@@ -43,17 +59,6 @@ pred_prob <- function(x, b){
   
 }
 
-# observed data
-df_bovine <- read.csv('~/research/africa/Nutrient_Demand/nd_R/df_bovine.csv')
-y <- matrix(df_bovine$AnimalVaccinated)
-y[which(y == 77)] <- 0
-X <- matrix(cbind(1,
-                  df_bovine$AnimalTreated,
-                  df_bovine$livincome,
-                  df_bovine$OffFarmNetIncome),
-            nrow = nrow(df_bovine))
-X[which(X[, 2] == 99), 2] <- 0
-
 # iterative normal center approximation
 err <- 1
 tol <- 1E-11
@@ -79,6 +84,7 @@ while (err > tol & itr <= max_itr) {
   
 }
 
+# estimator convergence plot
 est_conv_plot <- ggplot(beta_vals, aes(1:nrow(beta_vals))) +
   geom_line(aes(y = b0, colour = 'b_0')) +
   geom_line(aes(y = b1, colour = 'b_1')) +
@@ -94,7 +100,7 @@ est_conv_plot <- ggplot(beta_vals, aes(1:nrow(beta_vals))) +
         axis.title = element_text(family = 'serif'),
         legend.text = element_text(family = 'serif'))
 
-
+# predict conditional probabilities
 vacc <- c(1, 0)
 cond <- c('treatment', 'no treatment')
 phat <- c()
@@ -109,5 +115,29 @@ for (i in 1:length(vacc)) {
 }
 
 # approximate normal beta posterior distribution
+post_var <- function(x, b, n = length(y)) {
+  
+  eta <- x%*%b
+  f <- c(n*(exp(eta)/(1 + exp(eta))^2))
+  F <- diag(f)
+  V <- solve(t(x)%*%F%*%x)
+  return(V)
+  
+}
+
+# create beta distributions and CIs
+beta_var <- diag(post_var(X, beta_mp1))
+nsim <- 1E+3
+beta_dist <- setNames(data.frame(matrix(nrow = nsim, ncol = dim(beta_vals)[2])),
+                      names(beta_vals))
+beta_ci <- data.frame(lb = numeric(),
+                      ub = numeric())
+for (i in 1:length(beta_mp1)) {
+  
+  beta_dist[, names(beta_dist)[i]] <- rnorm(nsim, beta_mp1[i], sqrt(beta_var[i]))
+  beta_ci[i, 'lb'] <- beta_mp1[i] - qt(1 - .05/2, dim(X)[1] - dim(X)[2])*sqrt(beta_var[i])
+  beta_ci[i, 'ub'] <- beta_mp1[i] + qt(1 - .05/2, dim(X)[1] - dim(X)[2])*sqrt(beta_var[i])
+  
+}
 
 
