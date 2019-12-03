@@ -7,13 +7,14 @@
 ## with ex-ante vaccination 
 
 remove(list = objects())
-library(ggplot2)
+library(tidyverse)
 library(latex2exp)
 
-#### observed data ###
+#### observed data ----------------------------------------------
 
 df_bovine <- read.csv('~/research/africa/Nutrient_Demand/nd_R/df_bovine.csv')
 y <- matrix(df_bovine$AnimalVaccinated)
+# change 'unkown' value to 0
 y[which(y == 77)] <- 0
 X <- matrix(cbind(1,
                   df_bovine$AnimalTreated,
@@ -24,7 +25,7 @@ X <- matrix(cbind(1,
 X[which(X[, 2] == 99), 2] <- 0
 
 
-### define functions and conduct optimization ###
+### define functions and conduct optimization -------------------
 
 # pseudodata functions resulting from expansion
 z_gen <- function(x, b, y, n = length(y)) {
@@ -61,7 +62,7 @@ pred_prob <- function(x, b){
 
 # iterative normal center approximation
 err <- 1
-tol <- 1E-11
+tol <- 1E-10
 itr <- 5
 max_itr <- 50
 beta_m <- matrix(rep(0, dim(X)[2]), nrow = dim(X)[2])
@@ -84,21 +85,7 @@ while (err > tol & itr <= max_itr) {
   
 }
 
-# estimator convergence plot
-est_conv_plot <- ggplot(beta_vals, aes(1:nrow(beta_vals))) +
-  geom_line(aes(y = b0, colour = 'b_0')) +
-  geom_line(aes(y = b1, colour = 'b_1')) +
-  geom_line(aes(y = b2, colour = 'b_2')) +
-  geom_line(aes(y = b3, colour = 'b_3')) +
-  scale_color_manual(name = '',
-                     values = c('b_0' = 'black', 'b_1' = 'orange',
-                                'b_2' = 'blue', 'b_3' = 'red')) +
-  labs(title = 'Estimator Convergence',
-       x = 'Iteration',
-       y = TeX('$\\beta$')) +
-  theme(plot.title = element_text(family = 'serif', hjust = 0.5),
-        axis.title = element_text(family = 'serif'),
-        legend.text = element_text(family = 'serif'))
+#### post-optimization prediction and posterior inference -------------------
 
 # predict conditional probabilities
 vacc <- c(1, 0)
@@ -125,7 +112,7 @@ post_var <- function(x, b, n = length(y)) {
   
 }
 
-# create beta distributions and CIs
+# generate param distributions and CIs
 beta_var <- diag(post_var(X, beta_mp1))
 nsim <- 1E+3
 beta_dist <- setNames(data.frame(matrix(nrow = nsim, ncol = dim(beta_vals)[2])),
@@ -140,4 +127,36 @@ for (i in 1:length(beta_mp1)) {
   
 }
 
+##### tables, figures, etc. ----------------------------------------------
+df_ss <- data.frame(cbind(y, X[, 2:4])) %>% 
+  sapply(function(x) list(min(x), max(x), sum(x),
+                          round(mean(x), 4), round(sd(x), 4))) %>% 
+  t()
+colnames(df_ss) <- c('min', 'max', 'count', 'mean', 'Std')
+rownames(df_ss) <- c('Vaccinated', 'Treated', 'Livestock Income', 'Off-farm Income')
+df_ss[1:2, c('mean', 'Std')] <- '-'
+df_ss[3:4, 'count'] <- '-'
+
+# estimator convergence plot
+est_conv_plot <- ggplot(beta_vals, aes(1:nrow(beta_vals))) +
+  geom_line(aes(y = b0, colour = 'b_0')) +
+  geom_line(aes(y = b1, colour = 'b_1')) +
+  geom_line(aes(y = b2, colour = 'b_2')) +
+  geom_line(aes(y = b3, colour = 'b_3')) +
+  scale_color_manual(name = '',
+                     values = c('b_0' = 'black', 'b_1' = 'orange',
+                                'b_2' = 'blue', 'b_3' = 'red')) +
+  labs(title = 'Figure 1. Estimator Convergence',
+       x = 'Iteration',
+       y = TeX('$\\beta$')) +
+  theme(plot.title = element_text(family = 'serif', hjust = 0.5),
+        axis.title = element_text(family = 'serif'),
+        legend.text = element_text(family = 'serif'))
+
+# estimates with CIs
+beta_ci <- round(cbind(beta_mp1, beta_ci), 6) %>% 
+  select(Estimate = beta_mp1,
+         Lower_bound = lb,
+         Upper_bound = ub)
+rownames(beta_ci) <- colnames(beta_vals)
 
