@@ -24,6 +24,9 @@ X <- matrix(cbind(1,
 # change 'unkown' value to 0
 X[which(X[, 2] == 99), 2] <- 0
 
+# numerical prior on beta_1
+# y <- rbind(y, 0)
+# X <- rbind(X, c(0, 1, 0, 0))
 
 ### define functions and conduct optimization -------------------
 
@@ -67,7 +70,7 @@ itr <- 5
 max_itr <- 50
 beta_m <- matrix(rep(0, dim(X)[2]), nrow = dim(X)[2])
 beta_vals <- data.frame()
-while (err > tol & itr <= max_itr) {
+while (itr <= max_itr) {
   
   z <- z_gen(X, beta_m, y)
   sig2 <- sig2_gen(X, beta_m)
@@ -146,7 +149,7 @@ est_conv_plot <- ggplot(beta_vals, aes(1:nrow(beta_vals))) +
   scale_color_manual(name = '',
                      values = c('b_0' = 'black', 'b_1' = 'orange',
                                 'b_2' = 'blue', 'b_3' = 'red')) +
-  labs(title = 'Figure 1. Estimator Convergence',
+  labs(title = 'Figure 1. Estimator Convergence (diffuse prior)',
        x = 'Iteration',
        y = TeX('$\\beta$')) +
   theme(plot.title = element_text(family = 'serif', hjust = 0.5),
