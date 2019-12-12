@@ -3,7 +3,6 @@
 remove(list = objects())
 library(tidyverse)
 
-
 #### Generate data ----------------------------------
 # data generation following Hill (2010)
 set.seed(7777)
@@ -82,7 +81,7 @@ loglik <- function(n_vec, y_list, mu_vec, tn, c, v, lambda) {
   
 } 
 
-#### Tree action setup -------------------------------
+#### Tree action setup -----------------------------------
 
 # initialize z partition nodes and split value
 nodes_zl <- list()
@@ -92,9 +91,11 @@ split_z <- 0.5
 nodes_zlr <- list(NA)
 nodes_zrr <- list(NA)
 # initialize split value vectors
-splits_zl <- c()
-splits_zr <- c()
-
+splits_zl <- c(NA)
+splits_zr <- c(NA)
+# initialize leaf parameter vectors
+leaf_params <- setNames(data.frame(matrix(0, nrow = 1, ncol = 4)),
+                        c('l', 'lcomp', 'r', 'rcomp'))
 # initiate tree random action
 tree_step <- c('grow', 'prune', 'change', 'swap')
 draw_action <- function(d) {
@@ -106,6 +107,8 @@ draw_action <- function(d) {
   
 }
 
+#### Tree action functions --------------------------------
+
 # if action is grow
 t_grow <- function() {
   
@@ -116,17 +119,17 @@ t_grow <- function() {
   if(length(nodes_zl) == 0 | length(nodes_zr) == 0) {
     
     # define intial partition on z 
-    nodes_zl[[1]] <<- data %>% filter(z < split_z) %>% .$y
-    nodes_zr[[1]] <<- data %>% filter(!y %in% nodes_zl[[1]]) %>% .$y
-    # split choosen uniformly, serves as initial splits
-    splits_zl[1] <<- sample(data$x, 1)
-    splits_zr[1] <<- sample(data$x, 1)
+    nodes_zl[[1]] <<- data %>%
+      filter(z < split_z) %>%
+      .$y
+    nodes_zr[[1]] <<- data %>%
+      filter(!y %in% nodes_zl[[1]]) %>%
+      .$y
     
   } else {
     
     # ifelse and if_else only handles conditions of length 1
     if (s_direct == 'l') {
-      
       
       nodes <- nodes_zl
       nodes_r <- nodes_zlr
@@ -141,17 +144,21 @@ t_grow <- function() {
     }
     
     i <- length(nodes) + 1
-      
-    # store current split value
-    new_split <- data$x %>%
-      .[between(., min(.), splits[i - 1])] %>%
-      sample(1)
-    split <- if_else(length(nodes) <= 1,
-                     splits[1],
-                     new_split)
     
-    # append new split for next iteration
-    if (length(nodes) >=1 ) splits[i] <- new_split
+    # define uniform splitting rultes
+    if (length(nodes) == 1) {
+      
+      splits[i] <- sample(data$x, 1)
+      
+    } else {
+      
+      splits[i] <- data$x %>%
+        .[between(., min(.), splits[i - 1])] %>%
+        sample(1)
+      
+    }
+    
+    split <- splits[i]
     
     # partition data at current split point for data in z_left (< .05)
     split_y <- data %>%
@@ -163,11 +170,27 @@ t_grow <- function() {
       
       # assign data to new node
       nodes[[i]] <- split_y
-      # assign data to z_left 'right' node that doesn't satisfy current split rule
-      nodes_r[[i]] <- data %>%
-        filter(!y %in% unlist(nodes[-1]) &
-                 y %in% nodes[[1]]) %>%
-        .$y
+      
+      # parition compliment data depending on node length
+      if (length(nodes) <= 2) {
+        
+        split_comp_y <- data %>%
+          filter(!y %in% nodes[[i]] &
+                   y %in% nodes[[1]]) %>%
+          .$y
+        
+      } else {
+        
+        split_comp_y <- data %>%
+          filter(between(x, splits[i], splits[i - 1]) &
+                   !y %in% unlist(nodes_r) &
+                   y %in% nodes[[1]]) %>%
+          .$y
+        
+      }
+      
+      # assign data to compliment node
+      nodes_r[[i]] <- split_comp_y
       
     } else {
       
@@ -203,49 +226,53 @@ t_grow <- function() {
   
 }
 
-tt <- t_grow()
-tt2 <- t_grow()
-tt3 <- t_grow()
-tt4 <- t_grow()
-tt5 <- t_grow()
-tt6 <- t_grow()
-tt7 <- t_grow()
-
-
-
-
-
-###########
-if (action == 'prune') {
-    if(length(nodes_l) == 1 & length(nodes_r) == 1) {
-      
-      nodes_l <- NULL
-      nodes_r <- NULL
-      
-    }
+# if action is prune
+t_prune <- function() {
+  
+  s_direct <- sample(c('l', 'r'), 1)
+  
+  if(length(nodes_zl) == 1  & s_direct == 'l') {
     
-    if (length(nodes_l) > 1 | length(nodes_r) > 1) {
-      if (s_direct == 'l') {
-        
-        nodes_l <- nodes_l[[-c(length(nodes_l))]]
-        split_l <- split_l[-c(length(split_l))]
-        
-      } else {
-        
-        nodes_r <- nodes_r[[-c(length(nodes_r))]]
-        
-      }
+    cat('Cannot prune', s_direct, 'any further.')
+    
+  } else if (length(nodes_zr) == 1  & s_direct == 'r') {
+    
+    cat('Cannot prune', s_direct, 'any further.')
+    
+  } else {
+    
+    if (s_direct == 'l') {
+      
+      i <- length(nodes_zl)
+      nodes_zl <<- nodes_zl[-i]
+      nodes_zlr <<- nodes_zlr[-i]
+      splits_zl <<- splits_zl[-i]
+      
+    } else {
+      
+      i <- length(nodes_zr)
+      nodes_zr <<- nodes_zr[-i]
+      nodes_zrr <<- nodes_zrr[-i]
+      splits_zr <<- splits_zr[-i]
       
     }
     
   }
   
-  if (action == 'change' | action == 'swap') {
-    
-    cat('Test phase.', action, 'not evaluated yet.')
-    
-  }
+  out <- list(left_nodes = nodes_zl, right_nodes = nodes_zr,
+              left_comps = nodes_zlr, right_comps = nodes_zrr,
+              left_splits = splits_zl, right_splits = splits_zr,
+              direc = s_direct)
+  return(out)
+  
+}
 
+# if action is change
+t_change <- function() {
+  
+  
+  
+}
 
 
 
