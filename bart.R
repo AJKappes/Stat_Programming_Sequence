@@ -93,6 +93,8 @@ nodes_zrr <- list(NA)
 # initialize split value vectors
 splits_zl <- c(NA)
 splits_zr <- c(NA)
+# initialize leaf size constraint
+min_leaf_obs <- 4
 # initialize leaf parameter vectors
 leaf_params <- setNames(data.frame(matrix(0, nrow = 1, ncol = 4)),
                         c('l', 'lcomp', 'r', 'rcomp'))
@@ -114,7 +116,6 @@ t_grow <- function() {
   
   # draw initial z node direction, < 0.5 or > 0.5
   s_direct <- sample(c('l', 'r'), 1)
-  min_leaf_obs <- 4
   
   if(length(nodes_zl) == 0 | length(nodes_zr) == 0) {
     
@@ -160,13 +161,13 @@ t_grow <- function() {
     
     split <- splits[i]
     
-    # partition data at current split point for data in z_left (< .05)
+    # partition data at current split point for data in z <> .05
     split_y <- data %>%
       filter(x < split & y %in% nodes[[1]]) %>%
       .$y
     
     # check if minimum leaf obs is met
-    if(length(split_y) > min_leaf_obs) {
+    if(length(split_y) >= min_leaf_obs) {
       
       # assign data to new node
       nodes[[i]] <- split_y
@@ -195,7 +196,6 @@ t_grow <- function() {
     } else {
       
       splits <- splits[-length(splits)]
-      
       cat('Cannot partition.',
           '\nMinimum leaf obs of', min_leaf_obs, 'met.',
           '\n')
@@ -270,10 +270,96 @@ t_prune <- function() {
 # if action is change
 t_change <- function() {
   
+  s_direct <- sample(c('l', 'r'), 1)
   
+  if(length(nodes_zl) == 1  & s_direct == 'l') {
+    
+    cat('Cannot change splitting rule for', s_direct,
+        '\nCurrent node is the initial node.')
+    
+  } else if (length(nodes_zr) == 1  & s_direct == 'r') {
+    
+    cat('Cannot change splitting rule for', s_direct,
+        '\nCurrent node is the initial node.')
+    
+  } else {
+    
+    if (s_direct == 'l') {
+      
+      nodes <- nodes_zl
+      nodes_r <- nodes_zlr
+      splits <- splits_zl
+      
+    } else {
+      
+      nodes <- nodes_zr
+      nodes_r <- nodes_zrr
+      splits <- splits_zr
+      
+    }
+    
+    # random node draw conditioned on random side (z <> 0.5)
+    j <- sample(2:length(nodes), 1)
+    # subset nodes to operate on random node draw
+    nodes <- nodes[-c(j + 1:length(nodes))]
+    nodes_r <- nodes_r[-c(j + 1:length(nodes_r))]
+    splits <- splits[-c(j + 1:length(splits))]
+    
+    # define operating index
+    i <- length(nodes)
+    
+    # assign new splitting rule at the random draw
+    splits[i] <- data$x %>%
+      .[between(., min(.), splits[i - 1])] %>%
+      sample(1)
+    split <- splits[i]
+    
+    # partition data at current split point for data in z <> .05
+    split_y <- data %>%
+      filter(x < split & y %in% nodes[[1]]) %>%
+      .$y
+    
+    # check minimum leaf obs condition
+    if(length(split_y) >= min_leaf_obs) {
+      
+      # assign data to new random node
+      nodes[[i]] <- split_y
+      
+      if (length(nodes) <= 2) {
+        
+        split_comp_y <- data %>%
+          filter(!y %in% nodes[[i]] &
+                   y %in% nodes[[1]]) %>%
+          .$y
+        
+      } else {
+        
+        split_comp_y <- data %>%
+          filter(between(x, splits[i], splits[i - 1]) &
+                   !y %in% unlist(nodes_r) &
+                   y %in% nodes[[1]]) %>%
+          .$y
+        
+      }
+      
+      # assign data to new random compliment node
+      nodes_r[[i]] <- split_comp_y
+      
+    } else {
+      
+      # need to figure out what happens to node when cond not met
+      
+      cat('Cannot partition.',
+          '\nMinimum leaf obs of', min_leaf_obs, 'met.',
+          '\n')
+      
+    }
+      
+  }
   
 }
 
 
-
+# check processes
+tt <- list('z node', c(1:4), c(5:9), c(10:14), c(15:19))
 
