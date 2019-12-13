@@ -197,7 +197,7 @@ t_grow <- function() {
       
       splits <- splits[-length(splits)]
       cat('Cannot partition.',
-          '\nMinimum leaf obs of', min_leaf_obs, 'met.',
+          '\nMinimum leaf obs of', min_leaf_obs, 'not met.',
           '\n')
       
     }
@@ -349,8 +349,8 @@ t_change <- function() {
       
       # need to figure out what happens to node when cond not met
       
-      cat('Cannot partition.',
-          '\nMinimum leaf obs of', min_leaf_obs, 'met.',
+      cat('Cannot partition at random node with new splitting rule.',
+          '\nMinimum leaf obs of', min_leaf_obs, 'not met.',
           '\n')
       
     }
