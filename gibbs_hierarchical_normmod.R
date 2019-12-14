@@ -1,6 +1,7 @@
 # STAT 536 Project
 # Gibbs sampling for hierarchical normal model 
 remove(list = objects())
+library(tidyverse)
 
 #### conditional posterior distributions ------------------
 theta_gen <- function(mu, n_j, y_j, tau2, sig2) {
@@ -67,7 +68,8 @@ N <- sum(sapply(dlist, length))
 thetas_m <- sapply(dlist, mean)
 mu_m <- mean(thetas_m)
 
-nsim <- 1E+3
+nsim <- 8E+3
+burn <- 3E+3
 sim_params <- c('theta1', 'theta2', 'theta3', 'theta4',
                 'mu', 'sig2', 'tau2')
 sim_data <- setNames(data.frame(matrix(0, nrow = nsim, ncol = length(sim_params))),
@@ -94,11 +96,18 @@ for (i in 1:nsim) {
   thetas_m <- thetas_mp1
   mu_m <- mu_mp1
   
+  if (i == nsim) {
+    
+    burned_sim <- sim_data[-c(1:burn), ]
+    cat('Gibbs sampling complete. Burned', burn, 'initial samples.', '\n')
+    
+  }
+  
 }
 
 #### results table ---------------------------------------
-mu_hats <- colMeans(sim_data)
-quants <- sapply(sim_data, function(x) quantile(x, c(0.025, 0.25, 0.75, 0.975)))
+mu_hats <- colMeans(burned_sim)
+quants <- sapply(burned_sim, function(x) quantile(x, c(0.025, 0.25, 0.75, 0.975)))
 results_df <- data.frame('2.5%' = quants[1, ],
                          '25%' = quants[2, ],
                          mean = mu_hats,
@@ -108,4 +117,4 @@ results_df <- data.frame('2.5%' = quants[1, ],
 results_df[6:7, ] <- sapply(results_df[6:7, ], function(x) exp(sqrt(x)))
 rownames(results_df)[6:7] <- c('sigma', 'tau')
 
-print(results_df)
+
