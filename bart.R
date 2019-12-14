@@ -37,9 +37,6 @@ remove(x, y, z)
 # back to CGM98
 
 # tree prior
-#(alpha, beta) values based on suggestions from CGM98
-alpha <- 0.95
-beta <- 2
 p_split <- function(d, a = alpha, b = beta) {
   
   s <- a*(1 + d)^(-beta)
@@ -57,25 +54,24 @@ leaf_mu <- function(tn, mu, s2, c) {
 }
 
 # leaf param hyper
-sig2 <- function(v, lambda) {
+sig2 <- function(v = nu, lam = lambda) {
   
-  s2 <- 1/rgamma(v/2, scale = v*lambda/2)
+  s2 <- 1/rgamma(v/2, scale = v*lam/2)
   return(s2)
   
 }
 
 # log-likelihood 
-loglik <- function(n_vec, y_list, mu_vec, tn, c, v, lambda) {
+loglik <- function(n_vec, y_list, mu, n_tn, c = a, v = nu, lam = lambda) {
   
-  mu <- mean(mu_vec)
   s_vec <- map2_dbl(y_list, n_vec,
                     function(y, n) (n - 1)*var(y))
   t_vec <- map2_dbl(y_list, n_vec,
                     function(y, n) ((n*c)/(n + c))*(mean(y) - mu)^2)
   
-  f <- -sum(n_vec/2)*log(pi) + tn*v/2*log(v*lambda) + tn/2*log(c) +
+  f <- -sum(n_vec/2)*log(pi) + n_tn*v/2*log(v*lam) + n_tn/2*log(c) +
     -1/2*sum(log(n_vec + c)) + sum(log(gamma((n_vec + v)/2))) - 
-    tn*log(gamma(v/2)) - sum((n_vec + v)/2)*sum(log(s_vec + t_vec + v*lambda))
+    n_tn*log(gamma(v/2)) - sum((n_vec + v)/2)*sum(log(s_vec + t_vec + v*lam))
   
   return(f)
   
@@ -102,10 +98,12 @@ leaf_params <- setNames(data.frame(matrix(0, nrow = 1, ncol = 4)),
 tree_step <- c('grow', 'prune', 'change', 'swap')
 draw_action <- function(d) {
   
-  # probability of grow
-  p <- p_split(d)
-  s <- sample(tree_step, 1, prob = c(p, rep((1-p)/3, length(tree_step) - 1)))
-  return(s)
+  # kernel probabilities
+  g <- p_split(d)
+  p <- (1 - g)/3
+  s <- sample(tree_step, 1, prob = c(p, rep(p, length(tree_step) - 1)))
+  out <- list(g_kern = g, p_kern = p, draw = s)
+  return(out)
   
 }
 
@@ -127,6 +125,9 @@ t_grow <- function() {
       filter(!y %in% nodes_zl[[1]]) %>%
       .$y
     
+    # define initial depth
+    i <- 1
+    
   } else {
     
     # ifelse and if_else only handles conditions of length 1
@@ -144,6 +145,7 @@ t_grow <- function() {
       
     }
     
+    # new depth length to grow on
     i <- length(nodes) + 1
     
     # define uniform splitting rultes
@@ -221,7 +223,7 @@ t_grow <- function() {
   out <- list(left_nodes = nodes_zl, right_nodes = nodes_zr,
               left_comps = nodes_zlr, right_comps = nodes_zrr,
               left_splits = splits_zl, right_splits = splits_zr,
-              direc = s_direct)
+              depth = i, direc = s_direct)
   return(out)
   
 }
@@ -578,9 +580,78 @@ t_swap <- function() {
 }
 
 # check functions
-ttree <- t_grow()
-ttree <- t_prune()
-ttree <- t_change()
-ttree <- t_swap()
+# ttree <- t_grow()
+# ttree <- t_prune()
+# ttree <- t_change()
+# ttree <- t_swap()
+
+# get tree parameters needed for MH iters
+get_treedata <- function() {
+  
+  y_list <- c(nodes_zl[-1], nodes_zlr[-1],
+              nodes_zr[-1], nodes_zrr[-1])
+  n_termnodes <- length(y_list)
+  n_vec <- sapply(y_list, length)
+  
+  out <- list(ys = y_list, n_tns = n_termnodes, ns = n_vec)
+  return(out)
+  
+}
+
+#### MH algorithm --------------------------------------
+
+# define initial tree
+tree_m <- t_grow()
+
+# draw action
+action <- draw_action(tree_m$depth)
+# get kernals and draw info
+g_kern <- action$g_kern
+p_kern <- action$p_kern
+draw <- action$draw
+
+# choosen parameters -> CGM98 (alpha, beta, nu, lambda, a)
+alpha <- 0.95
+beta <- 2
+nu <- 3
+lambda <- 4
+a <- 1/3
+
+# initial parameters for updating
+mu <- mean(data$y)
+sig2 <- resid(lm(y ~ x, data = data))^2 %>% mean 
+
+if (draw == 'grow') {
+  
+  # grow the tree and evaluate rho
+  
+} else if (draw == 'prune') {
+  
+  # prune the tree, evaluate rho
+  
+} else if (draw == 'change') {
+  
+  # change internal node splitting rule, evaluate rho
+  
+} else {
+  
+  # draw is swap
+  # swap internal node splits, evaluate rho
+  
+}
+
+# define binomial acceptance
+
+# if accepted update mu with mean of mu draw of length nodes
+# mu draw informed by sig2 draw
+
+
+# test likelihood calculation
+dat <- get_treedata()
+y_list <- dat$ys
+n_vec <- dat$ns
+n_tn <- dat$n_tns 
+loglik(n_vec, y_list, mu, n_tn)
+
 
 
