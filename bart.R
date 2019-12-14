@@ -272,14 +272,14 @@ t_change <- function() {
   
   s_direct <- sample(c('l', 'r'), 1)
   
-  if(length(nodes_zl) == 1  & s_direct == 'l') {
+  if(length(nodes_zl) == 1 & s_direct == 'l') {
     
-    cat('Cannot change splitting rule for', s_direct,
+    cat('Cannot change splitting rule for direction:', s_direct,
         '\nCurrent node is the initial node.')
     
-  } else if (length(nodes_zr) == 1  & s_direct == 'r') {
+  } else if (length(nodes_zr) == 1 & s_direct == 'r') {
     
-    cat('Cannot change splitting rule for', s_direct,
+    cat('Cannot change splitting rule for direction:', s_direct,
         '\nCurrent node is the initial node.')
     
   } else {
@@ -299,19 +299,47 @@ t_change <- function() {
     }
     
     # random node draw conditioned on random side (z <> 0.5)
-    j <- sample(2:length(nodes), 1)
-    # subset nodes to operate on random node draw
-    nodes <- nodes[-c(j + 1:length(nodes))]
-    nodes_r <- nodes_r[-c(j + 1:length(nodes_r))]
-    splits <- splits[-c(j + 1:length(splits))]
+    # specify change conditions based on node length
+    if (length(nodes) > 2) {
+      
+      i <- sample(2:length(nodes), 1)
+      
+    } else {
+      
+      i <- 2
+      
+    }
     
-    # define operating index
-    i <- length(nodes)
+    if (i == length(nodes)) {
+      
+      nodes <- nodes
+      nodes_r <- nodes_r
+      splits <- splits
+      
+    } else {
+      
+      nodes <- nodes[-c(i + 1:length(nodes))]
+      nodes_r <- nodes_r[-c(i + 1:length(nodes_r))]
+      splits <- splits[-c(i + 1:length(splits))]
+      
+    }
     
-    # assign new splitting rule at the random draw
-    splits[i] <- data$x %>%
-      .[between(., min(.), splits[i - 1])] %>%
-      sample(1)
+    # store current split
+    old_split <- splits[i]
+    
+    # check split vector length to define new split
+    if (i > 2) {
+      
+      splits[i] <- data$x %>%
+        .[between(., min(.), splits[i - 1])] %>%
+        sample(1)
+      
+    } else {
+      
+      splits[i] <- sample(data$x, 1)
+      
+    }
+    
     split <- splits[i]
     
     # partition data at current split point for data in z <> .05
@@ -325,6 +353,7 @@ t_change <- function() {
       # assign data to new random node
       nodes[[i]] <- split_y
       
+      # parition compliment data depending on node length
       if (length(nodes) <= 2) {
         
         split_comp_y <- data %>%
@@ -347,19 +376,211 @@ t_change <- function() {
       
     } else {
       
-      # need to figure out what happens to node when cond not met
+      # iterate through new splitting rule until meeting obs const
+      itr <- 1
+      max_itr <- 20
+      while (length(split_y) < min_leaf_obs & itr <= max_itr) {
+        
+        if (i > 2) {
+          
+          splits[i] <- data$x %>%
+            .[between(., min(.), splits[i - 1])] %>%
+            sample(1)
+          
+        } else {
+          
+          splits[i] <- sample(data$x, 1)
+          
+        }
+        
+        split <- splits[i]
+        
+        # partition data at current split point for data in z <> .05
+        split_y <- data %>%
+          filter(x < split & y %in% nodes[[1]]) %>%
+          .$y
+        
+        cat('Finding valid splitting rule, iteration:', itr,
+            '\n')
+        itr <- itr + 1
+        
+        if (itr > max_itr) {
+          
+          # restore old split and partitioned data
+          splits[i] <- old_split
+          
+          cat('Max splitting iterations reached. Original split kept.',
+              '\n')
+          
+        }
+        
+      }
       
-      cat('Cannot partition at random node with new splitting rule.',
-          '\nMinimum leaf obs of', min_leaf_obs, 'not met.',
-          '\n')
+      # partition data based on splitting rule result
+      split <- splits[i]
+      split_y <- data %>%
+        filter(x < split & y %in% nodes[[1]]) %>%
+        .$y
+      nodes[[i]] <- split_y
+      
+      # parition compliment data depending on node length
+      if (length(nodes) <= 2) {
+        
+        split_comp_y <- data %>%
+          filter(!y %in% nodes[[i]] &
+                   y %in% nodes[[1]]) %>%
+          .$y
+        
+      } else {
+        
+        split_comp_y <- data %>%
+          filter(between(x, splits[i], splits[i - 1]) &
+                   !y %in% unlist(nodes_r) &
+                   y %in% nodes[[1]]) %>%
+          .$y
+        
+      }
+      
+    }
+    
+    if (s_direct == 'l') {
+      
+      nodes_zl <<- nodes
+      nodes_zlr <<- nodes_r
+      splits_zl <<- splits
+      
+    } else {
+      
+      nodes_zr <<- nodes
+      nodes_zrr <<- nodes_r
+      splits_zr <<- splits
       
     }
       
   }
   
+  out <- list(left_nodes = nodes_zl, right_nodes = nodes_zr,
+              left_comps = nodes_zlr, right_comps = nodes_zrr,
+              left_splits = splits_zl, right_splits = splits_zr,
+              direc = s_direct)
+  return(out)
+  
 }
 
+# if action is swap
+t_swap <- function() {
+  
+  s_direct <- sample(c('l', 'r'), 1)
+  
+  if(length(nodes_zl) == 1 & s_direct == 'l') {
+    
+    cat('Cannot swap splitting rule for direction:', s_direct,
+        '\nParent node is the initial node.')
+    
+  } else if (length(nodes_zr) == 1 & s_direct == 'r') {
+    
+    cat('Cannot change splitting rule direction:', s_direct,
+        '\nParent node is the initial node.')
+    
+  } else {
+    
+    if (s_direct == 'l') {
+      
+      nodes <- nodes_zl
+      nodes_r <- nodes_zlr
+      splits <- splits_zl
+      
+    } else {
+      
+      nodes <- nodes_zr
+      nodes_r <- nodes_zrr
+      splits <- splits_zr
+      
+    }
+    
+    # conditions for random parent node draw
+    if (length(nodes) > 2) {
+      
+      i <- sample(2:length(nodes), 1)
+      cat('Sample node', i, 'in length', length(nodes))
+      
+    } else {
+      
+      i <- 2
+      
+    }
+    
+    if(i == length(nodes)) {
+      
+      cat('There is no child node to swap with. Original nodes kept.',
+          '\n')
+      
+    } else {
+      
+      # save child data to map to parent node (given symmetric child split rule)
+      child_data <- nodes[[i + 1]]
+      # subset nodes to i - 1 before parent to define child split rule on parent
+      nodes <- nodes[-c(i:length(nodes))]
+      nodes_r <- nodes_r[-c(i:length(nodes_r))]
+      # swap splitting rule of parent i and child i + 1
+      split <- splits[i + 1]
+      splits <- splits[-c(i:length(splits))]
+      splits[i] <- split
+      
+      # swap parent and child node data based on child swap rule
+      nodes[[i]] <- child_data
+      
+      # partition new compliment data based on new parent node
+      if (length(nodes) <= 2) {
+        
+        split_comp_y <- data %>%
+          filter(!y %in% nodes[[i]] &
+                   y %in% nodes[[1]]) %>%
+          .$y
+        
+      } else {
+        
+        split_comp_y <- data %>%
+          filter(between(x, splits[i], splits[i - 1]) &
+                   !y %in% unlist(nodes_r) &
+                   y %in% nodes[[1]]) %>%
+          .$y
+        
+      }
+      
+      # assign new compliment data based on child split
+      nodes_r[[i]] <- split_comp_y
+      
+    }
+    
+    if (s_direct == 'l') {
+      
+      nodes_zl <<- nodes
+      nodes_zlr <<- nodes_r
+      splits_zl <<- splits
+      
+    } else {
+      
+      nodes_zr <<- nodes
+      nodes_zrr <<- nodes_r
+      splits_zr <<- splits
+      
+    }
+    
+  }
+  
+  out <- list(left_nodes = nodes_zl, right_nodes = nodes_zr,
+            left_comps = nodes_zlr, right_comps = nodes_zrr,
+            left_splits = splits_zl, right_splits = splits_zr,
+            direc = s_direct)
+  return(out)
+  
+}
 
-# check processes
-tt <- list('z node', c(1:4), c(5:9), c(10:14), c(15:19))
+# check functions
+ttree <- t_grow()
+ttree <- t_prune()
+ttree <- t_change()
+ttree <- t_swap()
+
 
