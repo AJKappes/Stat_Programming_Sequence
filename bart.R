@@ -94,7 +94,7 @@ loglik <- function(n_vec, y_list, mu, n_tn, c = a, v = nu, lam = lambda) {
 # Tree acceptance draw
 rho_draw <- function(k_grow, k_prune, Lmp1, Lm, tdraw) {
   
-  if(tdraw == 'grow') {
+  if (tdraw == 'grow') {
     
     rho <- min(k_prune*Lmp1/Lm, 1)
     
