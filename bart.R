@@ -46,7 +46,7 @@ p_split <- function(d, a = alpha, b = beta) {
 }
 
 # leaf param prior (mu)
-leaf_mu <- function(tn, mu, s2, c) {
+mus_draw <- function(tn, mu, s2, c = a) {
   
   mus <- rnorm(tn, mu, sqrt(s2/c))
   return(mus)
@@ -54,15 +54,29 @@ leaf_mu <- function(tn, mu, s2, c) {
 }
 
 # leaf param hyper
-sig2 <- function(v = nu, lam = lambda) {
+sig2_draw <- function(v = nu, lam = lambda) {
   
-  s2 <- 1/rgamma(v/2, scale = v*lam/2)
+  s2 <- 1/rgamma(1, v/2, scale = v*lam/2)
   return(s2)
   
 }
 
 # log-likelihood 
 loglik <- function(n_vec, y_list, mu, n_tn, c = a, v = nu, lam = lambda) {
+  
+  for (i in 1:length(y_list)) {
+    
+    j <- ifelse(length(y_list[[i]]) == 0, i, NA)
+    
+  }
+  
+  if (!is.na(j)) {
+    
+    y_list <- y_list[-j]
+    n_vec <- n_vec[-j]
+    n_tn <- n_tn - 1
+    
+  }
   
   s_vec <- map2_dbl(y_list, n_vec,
                     function(y, n) (n - 1)*var(y))
@@ -75,7 +89,29 @@ loglik <- function(n_vec, y_list, mu, n_tn, c = a, v = nu, lam = lambda) {
   
   return(f)
   
-} 
+}
+
+# Tree acceptance draw
+rho_draw <- function(k_grow, k_prune, Lmp1, Lm, tdraw) {
+  
+  if(tdraw == 'grow') {
+    
+    rho <- min(k_prune*Lmp1/Lm, 1)
+    
+  } else if (tdraw == 'prune') {
+    
+    rho <- min(Lmp1/(k_grow*Lm), 1)
+    
+  } else {
+    
+    rho <- min(Lmp1/Lm, 1)
+    
+  }
+  
+  bdraw <- rbinom(1, 1, rho)
+  return(bdraw)
+  
+}
 
 #### Tree action setup -----------------------------------
 
@@ -220,10 +256,11 @@ t_grow <- function() {
     
   }
   
+  d <- ifelse(s_direct == 'l', length(nodes_zl), length(nodes_zr))
   out <- list(left_nodes = nodes_zl, right_nodes = nodes_zr,
               left_comps = nodes_zlr, right_comps = nodes_zrr,
               left_splits = splits_zl, right_splits = splits_zr,
-              depth = i, direc = s_direct)
+              depth = d, direc = s_direct)
   return(out)
   
 }
@@ -235,11 +272,13 @@ t_prune <- function() {
   
   if(length(nodes_zl) == 1  & s_direct == 'l') {
     
-    cat('Cannot prune', s_direct, 'any further.')
+    cat('Cannot prune', s_direct, 'any further.',
+        '\n')
     
   } else if (length(nodes_zr) == 1  & s_direct == 'r') {
     
-    cat('Cannot prune', s_direct, 'any further.')
+    cat('Cannot prune', s_direct, 'any further.',
+        '\n')
     
   } else {
     
@@ -261,10 +300,11 @@ t_prune <- function() {
     
   }
   
+  d <- ifelse(s_direct == 'l', length(nodes_zl), length(nodes_zr))
   out <- list(left_nodes = nodes_zl, right_nodes = nodes_zr,
               left_comps = nodes_zlr, right_comps = nodes_zrr,
               left_splits = splits_zl, right_splits = splits_zr,
-              direc = s_direct)
+              depth = d, direc = s_direct)
   return(out)
   
 }
@@ -277,12 +317,14 @@ t_change <- function() {
   if(length(nodes_zl) == 1 & s_direct == 'l') {
     
     cat('Cannot change splitting rule for direction:', s_direct,
-        '\nCurrent node is the initial node.')
+        '\nCurrent node is the initial node.',
+        '\n')
     
   } else if (length(nodes_zr) == 1 & s_direct == 'r') {
     
     cat('Cannot change splitting rule for direction:', s_direct,
-        '\nCurrent node is the initial node.')
+        '\nCurrent node is the initial node.',
+        '\n')
     
   } else {
     
@@ -461,10 +503,11 @@ t_change <- function() {
       
   }
   
+  d <- ifelse(s_direct == 'l', length(nodes_zl), length(nodes_zr))
   out <- list(left_nodes = nodes_zl, right_nodes = nodes_zr,
               left_comps = nodes_zlr, right_comps = nodes_zrr,
               left_splits = splits_zl, right_splits = splits_zr,
-              direc = s_direct)
+              depth = d, direc = s_direct)
   return(out)
   
 }
@@ -477,12 +520,14 @@ t_swap <- function() {
   if(length(nodes_zl) == 1 & s_direct == 'l') {
     
     cat('Cannot swap splitting rule for direction:', s_direct,
-        '\nParent node is the initial node.')
+        '\nParent node is the initial node.',
+        '\n')
     
   } else if (length(nodes_zr) == 1 & s_direct == 'r') {
     
     cat('Cannot change splitting rule direction:', s_direct,
-        '\nParent node is the initial node.')
+        '\nParent node is the initial node.',
+        '\n')
     
   } else {
     
@@ -504,7 +549,8 @@ t_swap <- function() {
     if (length(nodes) > 2) {
       
       i <- sample(2:length(nodes), 1)
-      cat('Sample node', i, 'in length', length(nodes))
+      cat('Sample node', i, 'in length', length(nodes),
+          '\n')
       
     } else {
       
@@ -571,25 +617,20 @@ t_swap <- function() {
     
   }
   
+  d <- ifelse(s_direct == 'l', length(nodes_zl), length(nodes_zr))
   out <- list(left_nodes = nodes_zl, right_nodes = nodes_zr,
             left_comps = nodes_zlr, right_comps = nodes_zrr,
             left_splits = splits_zl, right_splits = splits_zr,
-            direc = s_direct)
+            depth = d, direc = s_direct)
   return(out)
   
 }
 
-# check functions
-# ttree <- t_grow()
-# ttree <- t_prune()
-# ttree <- t_change()
-# ttree <- t_swap()
-
 # get tree parameters needed for MH iters
 get_treedata <- function() {
   
-  y_list <- c(nodes_zl[-1], nodes_zlr[-1],
-              nodes_zr[-1], nodes_zrr[-1])
+  y_list <- c(nodes_zl, nodes_zlr[-1],
+              nodes_zr, nodes_zrr[-1])
   n_termnodes <- length(y_list)
   n_vec <- sapply(y_list, length)
   
@@ -600,58 +641,88 @@ get_treedata <- function() {
 
 #### MH algorithm --------------------------------------
 
-# define initial tree
-tree_m <- t_grow()
-
-# draw action
-action <- draw_action(tree_m$depth)
-# get kernals and draw info
-g_kern <- action$g_kern
-p_kern <- action$p_kern
-draw <- action$draw
-
 # choosen parameters -> CGM98 (alpha, beta, nu, lambda, a)
+res <- resid(lm(y ~ x, data = data))
 alpha <- 0.95
 beta <- 2
 nu <- 3
-lambda <- 4
-a <- 1/3
+lambda <- unname(quantile(res, 0.9))
+a <- var(res)/var(data$y)
 
 # initial parameters for updating
 mu <- mean(data$y)
 sig2 <- resid(lm(y ~ x, data = data))^2 %>% mean 
 
-if (draw == 'grow') {
+# define initial tree
+tree_m <- t_grow()
+tree_sims <- list(tree_m)
+
+# initialize likelihood from base tree
+y_list <- get_treedata()$ys
+n_tn <- get_treedata()$n_tns
+n_vec <- get_treedata()$ns
+loglik_m <- loglik(n_vec, y_list, mu, n_tn)
+
+max_itr <- 5
+for (i in 2:max_itr) {
   
-  # grow the tree and evaluate rho
+  # draw action
+  action <- draw_action(tree_m$depth)
+  draw <- action$draw
   
-} else if (draw == 'prune') {
+  if (draw == 'grow') {
+    
+    tree_mp1 <- t_grow()
+    g_kern <- draw_action(tree_mp1$depth)$g_kern
+    p_kern <- draw_action(tree_mp1$depth)$p_kern
+    
+  } else if (draw == 'prune') {
+    
+    tree_mp1 <- t_prune()
+    g_kern <- draw_action(tree_mp1$depth)$g_kern
+    p_kern <- draw_action(tree_mp1$depth)$p_kern
+    
+  } else if (draw == 'change') {
+    
+    tree_mp1 <- t_change()
+    
+  } else {
+    
+    tree_mp1 <- t_swap()
+    
+  }
   
-  # prune the tree, evaluate rho
+  y_list <- get_treedata()$ys
+  n_tn <- get_treedata()$n_tns
+  n_vec <- get_treedata()$ns
+  sig2 <- sig2_draw()
+  mu <- mean(mus_draw(n_tn, mu, sig2))
+  loglik_mp1 <- loglik(n_vec, y_list, mu, n_tn)
+  rho <- rho_draw(g_kern, p_kern, loglik_mp1, loglik_m, draw)
+  if (rho == 1) {
+    
+    tree_sims[[i]] <- tree_mp1
+    loglik_m <- loglik_mp1
+    
+  } else {
+    
+    tree_sims[[i]] <- tree_m
+    nodes_zl <- tree_m$left_nodes
+    nodes_zlr <- tree_m$left_comps
+    nodes_zr <- tree_m$right_nodes
+    nodes_zrr <- tree_m$right_comps
+    splits_zl <- tree_m$left_splits
+    splits_zr <- tree_m$right_splits
+    
+  }
   
-} else if (draw == 'change') {
-  
-  # change internal node splitting rule, evaluate rho
-  
-} else {
-  
-  # draw is swap
-  # swap internal node splits, evaluate rho
-  
+  tree_m <- tree_sims[[2]]
+  cat('----Bayes tree draw action:', draw,
+      '\n----Iteration', i, '/', max_itr,
+      '\n\n')
 }
 
-# define binomial acceptance
 
-# if accepted update mu with mean of mu draw of length nodes
-# mu draw informed by sig2 draw
-
-
-# test likelihood calculation
-dat <- get_treedata()
-y_list <- dat$ys
-n_vec <- dat$ns
-n_tn <- dat$n_tns 
-loglik(n_vec, y_list, mu, n_tn)
 
 
 
