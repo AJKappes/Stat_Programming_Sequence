@@ -517,7 +517,7 @@ t_swap <- function() {
   
   s_direct <- sample(c('l', 'r'), 1)
   
-  if(length(nodes_zl) == 1 & s_direct == 'l') {
+  if (length(nodes_zl) == 1 & s_direct == 'l') {
     
     cat('Cannot swap splitting rule for direction:', s_direct,
         '\nParent node is the initial node.',
@@ -558,7 +558,7 @@ t_swap <- function() {
       
     }
     
-    if(i == length(nodes)) {
+    if (i == length(nodes)) {
       
       cat('There is no child node to swap with. Original nodes kept.',
           '\n')
