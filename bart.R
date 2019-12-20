@@ -5,9 +5,9 @@ library(tidyverse)
 
 #### Generate data ----------------------------------
 # data generation following Hill (2010)
-set.seed(7777)
+set.seed(77)
 p <- 0.5
-z <- rbinom(200, 1, p)
+z <- rbinom(500, 1, p)
 y <- c()
 x <- c()
 for (i in 1:length(z)) {
@@ -26,16 +26,18 @@ for (i in 1:length(z)) {
     
 }
 
-set.seed(NULL)
+#set.seed(NULL)
 
 # resale y to (-.5, .5) interval
 ridx <- which(is.na(y))
 y <- y[-ridx]
 y <- (y - min(y))/(max(y) - min(y)) - 0.5
+org_y <- y
 data <- data.frame(y = y,
                    z = z[-ridx],
-                   x = x[-ridx])
-remove(x, y, z)
+                   x = x[-ridx],
+                   org_y = org_y)
+remove(x, y, z, org_y)
 
 #### Priors and likelihood -------------------------
 # back to CGM98
@@ -96,7 +98,23 @@ loglik <- function(n_vec, y_list, mu, n_tn, c = a, v = nu, lam = lambda) {
 # Tree acceptance draw
 rho_draw <- function(k_grow, k_prune, Lmp1, Lm, tdraw) {
   
-  l_rat <- ifelse(Lmp1/Lm >= 0, Lmp1/Lm, 0)
+  if (Lmp1 < 0 & Lm > 0) {
+    
+    l_rat <- 0
+    
+  } else if (Lmp1 > 0 & Lm < 0) {
+    
+    l_rat <- 1
+    
+  } else if (Lmp1 == Inf & Lm == Inf) {
+    
+    l_rat <- 1
+    
+  } else {
+    
+    l_rat <- Lmp1/Lm
+    
+  }
   
   if (tdraw == 'grow') {
     
@@ -133,20 +151,24 @@ splits_zl <- c(split_z)
 splits_zr <- c(split_z)
 
 # initialize leaf size constraint
-min_leaf_obs <- 4
+min_leaf_obs <- 3
 
 # initialize leaf parameter list
 leaf_params <- list()
 
 # initiate tree random action
 tree_step <- c('grow', 'prune', 'change', 'swap')
-draw_action <- function(d) {
+draw_action <- function() {
   
   # kernel probabilities
-  g <- p_split(d)
-  p <- (1 - g)/3
-  s <- sample(tree_step, 1, prob = c(g, rep(p, length(tree_step) - 1)))
-  out <- list(g_kern = g, p_kern = p, draw = s)
+  # g <- p_split(d)
+  # p <- (1 - g)/3
+  g_kern <- .25
+  p_kern <- g_kern
+  c <- .4
+  s <- .1
+  s <- sample(tree_step, 1, prob = c(g_kern, p_kern, c, s))
+  out <- list(g_kern = g_kern, p_kern = p_kern, draw = s)
   return(out)
   
 }
@@ -647,7 +669,7 @@ t_swap <- function() {
 }
 
 # get tree parameters needed for MH iters
-get_treedata <- function() {
+get_treedata <- function(i) {
   
   # get tree information
   all_y <- c(nodes_zl[[1]],  nodes_zr[[1]])
@@ -657,15 +679,24 @@ get_treedata <- function() {
   n_tnr <- 1 + length(nodes_zrr[-1])
   n_tns <- n_tnl + n_tnr
   n_vec <- sapply(y_list, length)
-  
-  # get residual information
+  l_splits <- splits_zl
+  r_splits <- splits_zr
   params <- mus_draw(n_tns, sig2_mu)
   mu <- mean(params)
-  r_list <- map2(y_list, params, function(l, p) l - p)
+  
+  # set summed params for resids iter
+  leaf_params[i, 1:n_tns] <<- params
+  J_psum <- colSums(leaf_params)
+  p_sum <- J_psum[1:n_tns]
+  
+  # get residual information
+  r_list <- map2(y_list, p_sum, function(l, p) l - p)
   
   out <- list(all_y = all_y, y_list = y_list, n_tns = n_tns,
               n_tnl = n_tnl, n_tnr = n_tnr, n_vec = n_vec,
-              params = params, mu = mu, r_list = r_list)
+              l_splits = l_splits, r_splits = r_splits,
+              params = params, p_sum = p_sum, mu = mu,
+              r_list = r_list)
   return(out)
   
 }
@@ -680,7 +711,6 @@ set_resdata <- function() {
   # replace initial node with residual values
   nodes_zl[[1]] <<- data %>% filter(z < split_z) %>% .$y
   nodes_zr[[1]] <<- data %>% filter(z > split_z) %>% .$y
-  
   #nodes_zl[[1]] <<- unlist(r_list[1:length(nodes_zl)])
   #nodes_zr[[1]] <<- unlist(r_list[(length(nodes_zl) + 1):length(r_list)])
   
@@ -712,8 +742,6 @@ set_resdata <- function() {
     nodes_zrr[2:len_rnr] <<- r_list[(len_lnr + 2):length(r_list)]
 
   }
-  
-  return(yidx)
   
 }
 
@@ -814,7 +842,7 @@ set_resdata <- function() {
 alpha <- 0.95
 beta <- 2
 
-m <- 200
+m <- 1000
 k <- 2
 sig2_mu <- 0.5/(k*sqrt(m)) 
 
@@ -826,8 +854,12 @@ a <- var(res)/var(data$y)
 # define initial tree
 tree_m <- t_grow()
 
+# initialize parameter matrix and rho vector
+leaf_params <- matrix(0, nrow = m, ncol = m/min_leaf_obs)
+rho_vec <- NA
+
 # initialize likelihood from base tree, 
-treedata <- get_treedata()
+treedata <- get_treedata(1)
 all_y <- treedata$all_y
 y_list <- treedata$y_list
 n_tn <- treedata$n_tns
@@ -837,34 +869,31 @@ loglik_m <- loglik(n_vec, y_list, mu, n_tn)
 
 # get initial residuals and updated mu for tree_mp1
 r_list <- treedata$r_list
-leaf_params[[1]] <- treedata$params
 
 # update response data to current residuals
-yidx <- set_resdata()
+set_resdata()
 
 # initialize tree sim list
 tree_sims <- list(tree_m)
-tdat_list <- list(treedata)
-yidx_list <- list(yidx)
-rho_vec <- c(NA)
+treedata_list <- list(treedata)
 
 # MH implementation
 for (i in 2:m) {
   
   # draw action
-  draw <- draw_action(tree_m$depth)$draw
+  draw <- draw_action()$draw
   
   if (draw == 'grow') {
     
     tree_mp1 <- t_grow()
-    g_kern <- draw_action(tree_mp1$depth)$g_kern
-    p_kern <- draw_action(tree_mp1$depth)$p_kern
+    g_kern <- draw_action()$g_kern
+    p_kern <- draw_action()$p_kern
     
   } else if (draw == 'prune') {
     
     tree_mp1 <- t_prune()
-    g_kern <- draw_action(tree_mp1$depth)$g_kern
-    p_kern <- draw_action(tree_mp1$depth)$p_kern
+    g_kern <- draw_action()$g_kern
+    p_kern <- draw_action()$p_kern
     
   } else if (draw == 'change') {
     
@@ -876,64 +905,49 @@ for (i in 2:m) {
     
   }
   
-  if (tree_mp1$inaction) {
+  # get new tree data
+  treedata <- get_treedata(i)
+  all_y <- treedata$all_y
+  y_list <- treedata$y_list
+  n_tn <- treedata$n_tns
+  n_vec <- treedata$n_vec
+  r_list <- treedata$r_list
+  mu <- treedata$mu
+  loglik_mp1 <- loglik(n_vec, r_list, mu, n_tn)
+  
+  treedata_list[[i]] <- treedata
+  
+  # tree_mp1 acceptance parameter 
+  rho <- rho_draw(g_kern, p_kern, loglik_mp1, loglik_m, draw)
+  rho_vec[i] <- rho
+  
+  if (rho == 1) {
     
-    tree_sims[[i]] <- tree_m
-    leaf_params[[i]] <- leaf_params[[i - 1]]
-    
-    cat('mth residuals kept',
-        '\n')
-    
-  } else {
-    
-    treedata <- get_treedata()
-    all_y <- treedata$all_y
-    y_list <- treedata$y_list
-    n_tn <- treedata$n_tns
-    n_vec <- treedata$n_vec
-    r_list <- treedata$r_list
-    params <- treedata$params
-    mu <- treedata$mu
-    loglik_mp1 <- loglik(n_vec, r_list, mu, n_tn)
+    # T* = tree_mp1, store tree_mp1 data from above
+    # compute residuals for next iter
     set_resdata()
     
-    tdat_list[[i]] <- treedata
+    # store tree_mp1 as tree_m
+    tree_sims[[i]] <- tree_mp1
     
-    # tree_mp1 acceptance parameter 
-    rho <- rho_draw(g_kern, p_kern, loglik_mp1, loglik_m, draw)
-    rho_vec[i] <- rho
+    # store updated likelihood value as mth iter likelihood
+    loglik_m <- loglik_mp1
     
-    if (rho == 1) {
+    cat('T(m+1) = T*',
+        '\n')
+    
+    } else {
       
-      # T* = tree_mp1, store tree_mp1 data from above
-      # compute residuals for next iter
+      # T* = tree_m
+      tree_sims[[i]] <- tree_m
       
-      # store tree_mp1 as tree_m
-      tree_sims[[i]] <- tree_mp1
+      # cancel drawn parameters for unaccepted tree
+      leaf_params[i, ] <- 0
       
-      # store drawn leaf parameters
-      leaf_params[[i]] <- params
-      
-      # store updated likelihood value as mth iter likelihood
-      loglik_m <- loglik_mp1
-      
-      cat('T(m+1) = T*',
+      cat('T(m+1) = T(m)',
           '\n')
       
-      } else {
-        
-        # T* = tree_m
-        tree_sims[[i]] <- tree_m
-        
-        # mth leaf parameters and mu
-        leaf_params[[i]] <- leaf_params[[i - 1]]
-        
-        cat('T(m+1) = T(m)',
-            '\n')
-        
-      }
-    
-  }
+    }
   
   tree_m <- tree_sims[[i]]
   
@@ -942,6 +956,264 @@ for (i in 2:m) {
       '\n\n')
 }
 
+#### Prediction ----------------------------
+
+# weighted nodes expectation
+vis_nodes <- data.frame(l = sapply(tree_sims, function(x) length(x$left_splits)),
+                        r = sapply(tree_sims, function(x) length(x$right_splits)))
+
+get_Enodes <- function(direc) {
+  
+  w_node <- sum(table(vis_nodes[[direc]])/m*sort(unique(vis_nodes[[direc]])))
+  idx <- which.min(abs(w_node - unique(vis_nodes[[direc]])))
+  Enode <- unique(vis_nodes[[direc]])[idx]
+  
+  return(Enode)
+  
+}
+
+Enodes <- c(get_Enodes('l'), get_Enodes('r'))
+
+# expected left splits
+sub_lsplits_idx <- sapply(tree_sims, function(x) length(x$left_splits) == Enodes[1])
+sub_lsplits <- sapply(tree_sims[c(sub_lsplits_idx)], function(x) x$left_splits)
+if (Enodes[1] > 1) {
+  
+  # ifelse not handling return rowMeans()
+  Elsplits <- rowMeans(sub_lsplits)
+  
+} else {
+  
+  Elsplits <- split_z
+  
+}
+
+# expected right splits
+sub_rsplits <- sapply(tree_sims, function(x) length(x$right_splits) == Enodes[2])
+sub_rsplits <- sapply(tree_sims[c(sub_rsplits)], function(x) x$right_splits)
+if (Enodes[2] > 1) {
+  
+  Ersplits <- rowMeans(sub_rsplits)
+  
+} else {
+  
+  Ersplits <- split_z
+  
+}
+
+# get associated leaf parameters
+get_leafparams <- function(len_sp, direc) {
+  
+  p_vec <- c()
+  
+  if (direc == 'right') {
+    
+    for (i in 1:len_sp) {
+      
+      if (len_sp == 1) {
+        
+        p_vec[i] <- data %>% 
+          filter(z > Ersplits[1]) %>% 
+          .$org_y %>% 
+          mean()
+          
+      } else if (i == len_sp) {
+        
+        p_vec[i] <- data %>% 
+          filter(z > Ersplits[1] &
+                   x < Ersplits[i]) %>% 
+          .$org_y %>% 
+          mean()
+        
+      } else if (i == 1) {
+        
+        p_vec[i] <- data %>% 
+          filter(z > Ersplits[1] &
+                   x > Ersplits[i + 1]) %>% 
+          .$org_y %>% 
+          mean()
+        
+      } else {
+        
+        p_vec[i] <- data %>% 
+          filter(z > Ersplits[1] &
+                   x < Ersplits[i] &
+                   x > Ersplits[i + 1]) %>% 
+          .$org_y %>% 
+          mean()
+        
+      }
+      
+    }
+    
+  } else {
+    
+    for (i in 1:len_sp) {
+      
+      if (len_sp == 1) {
+        
+        p_vec[i] <- data %>% 
+          filter(z < Elsplits[1]) %>% 
+          .$org_y %>% 
+          mean()
+        
+      } else if (i == len_sp) {
+        
+        p_vec[i] <- data %>% 
+          filter(z < Elsplits[1] &
+                   x < Elsplits[i]) %>% 
+          .$org_y %>% 
+          mean()
+        
+        } else if (i == 1) {
+        
+        p_vec[i] <- data %>% 
+          filter(z < Elsplits[1] &
+                   x > Elsplits[i + 1]) %>% 
+          .$org_y %>% 
+          mean()
+        
+      } else {
+        
+        p_vec[i] <- data %>% 
+          filter(z < Elsplits[1] &
+                   x < Elsplits[i] &
+                   x > Elsplits[i + 1]) %>% 
+          .$org_y %>% 
+          mean()
+        
+      }
+      
+    }
+    
+  }
+  
+  return(p_vec)
+  
+}
+
+# retrieve parameter values
+Elparams <- get_leafparams(length(Elsplits), 'left')
+Erparams <- get_leafparams(length(Ersplits), 'right')
+
+# splits may be too close together and produce no obs
+if (any(is.na(Elparams))) {
+  
+  naidx <- which(is.na(Elparams))
+  Elparams <- Elparams[-naidx]
+  Elsplits <- Elsplits[-(naidx + 1)]
+  
+} else if (any(is.na(Erparams))) {
+  
+  naidx <- which(is.na(Erparams))
+  Erparams <- Erparams[-naidx]
+  Ersplits <- Ersplits[-(naidx + 1)]
+  
+}
+
+# set values for plotting fits
+data$yfit <- 0
+llparams <- length(Elparams)
+lrparams <- length(Erparams)
+  
+if (llparams == 1) {
+  
+  idx <- which(data$z < Elsplits[1])
+  data$yfit[idx] <- Elparams[1]
+  
+}
+
+if (llparams == 2) {
+  
+  idx1 <- which(data$z < Elsplits[1] &
+                  data$x >= Elsplits[2])
+  data$yfit[idx1] <- Elparams[1]
+  idx2 <- which(data$z < Elsplits[1] &
+                  data$x < Elsplits[2])
+  data$yfit[idx2] <- Elparams[2]
+  
+}
+
+for (i in 1:llparams) {
+  
+  if (i == 1) {
+    
+    idx <- which(data$z < Elsplits[1] &
+                   data$x >= Elsplits[2])
+    data$yfit[idx] <- Elparams[1]
+    
+  } else {
+    
+    idx <- which(data$z < Elsplits[1] &
+                   data$x < Elsplits[i] & 
+                   data$x >= Elsplits[i + 1])
+    data$yfit[idx] <- Elparams[i]
+    
+  } 
+  
+  if (i == llparams) {
+    
+    idx <- which(data$z < Elsplits[1] &
+                   data$x < Elsplits[i])
+    data$yfit[idx] <- Elparams[i]
+    
+  }
+  
+}
+
+if (lrparams == 1) {
+  
+  idx <- which(data$z > Ersplits[1])
+  data$yfit[idx] <- Erparams[1]
+  
+}
+
+if (lrparams == 2) {
+  
+  idx1 <- which(data$z > Ersplits[1] &
+                  data$x >= Ersplits[2])
+  data$yfit[idx1] <- Erparams[1]
+  idx2 <- which(data$z > Ersplits[1] &
+                  data$x < Ersplits[2])
+  data$yfit[idx2] <- Erparams[2]
+  
+}
+
+for (i in 1:lrparams) {
+  
+  if (i == 1) {
+    
+    idx <- which(data$z > Ersplits[1] &
+                   data$x >= Ersplits[2])
+    data$yfit[idx] <- Erparams[1]
+    
+  } else {
+    
+    idx <- which(data$z > Ersplits[1] &
+                   data$x < Ersplits[i] & 
+                   data$x >= Ersplits[i + 1])
+    data$yfit[idx] <- Erparams[i]
+    
+  }
+  
+  if (i == lrparams) {
+    
+    idx <- which(data$z > Ersplits[1] &
+                   data$x < Ersplits[i])
+    data$yfit[idx] <- Erparams[i]
+    
+  }
+
+}
+
+plot(data$x, data$org_y, xlab = 'x', ylab = 'y')
+points(data[data$z < 0.5, 'x'], data[data$z < 0.5, 'yfit'],
+       col = 'red', pch = 19, cex = 0.75)
+points(data[data$z > 0.5, 'x'], data[data$z > 0.5, 'yfit'],
+       col = 'blue', pch = 19, cex = 0.75)
+title(main = 'Generated Treatment Data and BART Prediction')
+legend("topleft", pch = 19, col = c('blue', 'red'), box.lty = 0,
+       legend = c('Yhat | Z = 1', 'Yhat | Z = 0'))
 
 
 
@@ -949,26 +1221,3 @@ for (i in 2:m) {
 
 
 
-
-
-
-############### -------------------------------------------
-# l <- list(c(1, 2, 3), c(4, 5, 6), c(7, 8, 9), c(10, 11, 12))
-# ms <- c(9,8,7,6)
-# l - ms
-# map2(l, ms, function(x, m) x-m)
-# 
-# 
-# 
-# # weighted nodes expectation
-# vis_nodes <- data.frame(l = sapply(tree_sims, function(x) length(x$left_splits)),
-#                         r = sapply(tree_sims, function(x) length(x$right_splits)))
-# Enodes <- sapply(vis_nodes, function(x) sum(table(x)/m*min(x):max(x))) %>%
-#   unname() %>% 
-#   round()
-# 
-# # get leaf params associated with expected node lengths
-# idx <- which(vis_nodes$l == Enodes[1] & vis_nodes$r == Enodes[2])
-# subtree_sim <- tree_sims[c(idx)]
-# subleaf_params <- do.call(rbind, leaf_params[c(idx)])
-# Eleaf_params <- colMeans(subleaf_params[, -4])
