@@ -7,7 +7,7 @@ library(tidyverse)
 # data generation following Hill (2010)
 set.seed(77)
 p <- 0.5
-z <- rbinom(500, 1, p)
+z <- rbinom(200, 1, p)
 y <- c()
 x <- c()
 for (i in 1:length(z)) {
@@ -28,7 +28,7 @@ for (i in 1:length(z)) {
 
 #set.seed(NULL)
 
-# resale y to (-.5, .5) interval
+# rescale y to (-.5, .5) interval
 ridx <- which(is.na(y))
 y <- y[-ridx]
 y <- (y - min(y))/(max(y) - min(y)) - 0.5
@@ -98,23 +98,25 @@ loglik <- function(n_vec, y_list, mu, n_tn, c = a, v = nu, lam = lambda) {
 # Tree acceptance draw
 rho_draw <- function(k_grow, k_prune, Lmp1, Lm, tdraw) {
   
-  if (Lmp1 < 0 & Lm > 0) {
-    
-    l_rat <- 0
-    
-  } else if (Lmp1 > 0 & Lm < 0) {
-    
-    l_rat <- 1
-    
-  } else if (Lmp1 == Inf & Lm == Inf) {
-    
-    l_rat <- 1
-    
-  } else {
-    
-    l_rat <- Lmp1/Lm
-    
-  }
+  # if (Lmp1 < 0 & Lm > 0) {
+  #   
+  #   l_rat <- 0
+  #   
+  # } else if (Lmp1 > 0 & Lm < 0) {
+  #   
+  #   l_rat <- 1
+  #   
+  # } else if (Lmp1 == Inf & Lm == Inf) {
+  #   
+  #   l_rat <- 1
+  #   
+  # } else {
+  #   
+  #   l_rat <- Lmp1/Lm
+  #   
+  # }
+  
+  l_rat <- Lmp1/Lm
   
   if (tdraw == 'grow') {
     
@@ -161,14 +163,16 @@ tree_step <- c('grow', 'prune', 'change', 'swap')
 draw_action <- function() {
   
   # kernel probabilities
-  # g <- p_split(d)
-  # p <- (1 - g)/3
-  g_kern <- .25
-  p_kern <- g_kern
+  #g <- p_split(d)
+  #p <- (1 - g)/3
+  #c <- p
+  #s <- p
+  g <- .25
+  p <- g
   c <- .4
   s <- .1
-  s <- sample(tree_step, 1, prob = c(g_kern, p_kern, c, s))
-  out <- list(g_kern = g_kern, p_kern = p_kern, draw = s)
+  draw <- sample(tree_step, 1, prob = c(g, p, c, s))
+  out <- list(g_kern = g, p_kern = p, draw = draw)
   return(out)
   
 }
@@ -701,139 +705,48 @@ get_treedata <- function(i) {
   
 }
 
-# set residuals for tree_mp1 iteration
-set_resdata <- function() {
-  
-  # set y data to match residual index
-  yidx <- match(all_y, data$y)
-  data$y[yidx] <<- unlist(r_list)
-  
-  # replace initial node with residual values
-  nodes_zl[[1]] <<- data %>% filter(z < split_z) %>% .$y
-  nodes_zr[[1]] <<- data %>% filter(z > split_z) %>% .$y
-  #nodes_zl[[1]] <<- unlist(r_list[1:length(nodes_zl)])
-  #nodes_zr[[1]] <<- unlist(r_list[(length(nodes_zl) + 1):length(r_list)])
-  
-  #replace < terminal nodes with residual values
-  len_ln <- length(nodes_zl)
-  if (len_ln > 1) {
-
-    nodes_zl[[len_ln]] <<- r_list[[1]]
-
-  }
-
-  if (length(nodes_zr) > 1) {
-
-    nodes_zr[[length(nodes_zr)]] <<- r_list[[len_ln + 1]]
-
-  }
-  
-  # replace terminal compliment nodes with residuals
-  len_lnr <- length(nodes_zlr)
-  len_rnr <- length(nodes_zrr)
-  if (len_lnr > 1) {
-
-    nodes_zlr[2:len_lnr] <<- r_list[2:len_lnr]
-
-  }
-
-  if (len_rnr > 1) {
-
-    nodes_zrr[2:len_rnr] <<- r_list[(len_lnr + 2):length(r_list)]
-
-  }
-  
-}
-
-#### Generate Bayesian trees --------------------------------------
-
-# choosen parameters -> CGM98 (alpha, beta, nu, lambda, a)
-# res <- resid(lm(y ~ x, data = data))
-# alpha <- 0.95
-# beta <- 2
-# nu <- 3
-# lambda <- unname(quantile(res, 0.9))
-# a <- var(res)/var(data$y)
-# 
-# # define initial tree
-# tree_m <- t_grow()
-# tree_sims <- list(tree_m)
-# 
-# # initialize likelihood from base tree
-# y_list <- get_treedata()$ys
-# n_tn <- get_treedata()$n_tns
-# n_vec <- get_treedata()$ns
-# sig2 <- sig2_draw()
-# param_draw <- mus_draw(n_tn, mean(data$y), sig2)
-# mu <- mean(param_draw)
-# leaf_params <- list(mu)
-# loglik_m <- loglik(n_vec, y_list, mu, n_tn)
-# marg_ll <- 0 
-# 
-# mh_n <- 5000
-# for (i in 2:mh_n) {
+# set residuals for tree_mp1 iteration -----
+# set_resdata <- function() {
 #   
-#   # draw action
-#   action <- draw_action(tree_m$depth)
-#   draw <- action$draw
+#   # set y data to match residual index
+#   yidx <- match(all_y, data$y)
+#   data$y[yidx] <<- unlist(r_list)
 #   
-#   if (draw == 'grow') {
-#     
-#     tree_mp1 <- t_grow()
-#     g_kern <- draw_action(tree_mp1$depth)$g_kern
-#     p_kern <- draw_action(tree_mp1$depth)$p_kern
-#     
-#   } else if (draw == 'prune') {
-#     
-#     tree_mp1 <- t_prune()
-#     g_kern <- draw_action(tree_mp1$depth)$g_kern
-#     p_kern <- draw_action(tree_mp1$depth)$p_kern
-#     
-#   } else if (draw == 'change') {
-#     
-#     tree_mp1 <- t_change()
-#     
-#   } else {
-#     
-#     tree_mp1 <- t_swap()
-#     
+#   # replace initial node with residual values
+#   nodes_zl[[1]] <<- data %>% filter(z < split_z) %>% .$y
+#   nodes_zr[[1]] <<- data %>% filter(z > split_z) %>% .$y
+#   #nodes_zl[[1]] <<- unlist(r_list[1:length(nodes_zl)])
+#   #nodes_zr[[1]] <<- unlist(r_list[(length(nodes_zl) + 1):length(r_list)])
+#   
+#   #replace < terminal nodes with residual values
+#   len_ln <- length(nodes_zl)
+#   if (len_ln > 1) {
+# 
+#     nodes_zl[[len_ln]] <<- r_list[[1]]
+# 
+#   }
+# 
+#   if (length(nodes_zr) > 1) {
+# 
+#     nodes_zr[[length(nodes_zr)]] <<- r_list[[len_ln + 1]]
+# 
 #   }
 #   
-#   y_list <- get_treedata()$ys
-#   n_tn <- get_treedata()$n_tns
-#   n_vec <- get_treedata()$ns
-#   loglik_mp1 <- loglik(n_vec, y_list, mu, n_tn)
-#   rho <- rho_draw(g_kern, p_kern, loglik_mp1, loglik_m, draw)
-#   
-#   if (rho == 1) {
-#     
-#     tree_sims[[i]] <- tree_mp1
-#     diff_ll <- -1*(abs(loglik_mp1) - abs(loglik_m)) %>% round(6)
-#     marg_ll <- c(marg_ll, diff_ll)
-#     sig2 <- sig2_draw()
-#     param_draw <- mus_draw(n_tn, mu, sig2)
-#     mu <- mean(param_draw)
-#     leaf_params[[i]] <- param_draw
-#     loglik_m <- loglik_mp1
-#     
-#   } else {
-#     
-#     tree_sims[[i]] <- tree_m
-#     leaf_params[[i]] <- param_draw
-#     marg_ll <- c(marg_ll, 0)
-#     nodes_zl <- tree_m$left_nodes
-#     nodes_zlr <- tree_m$left_comps
-#     nodes_zr <- tree_m$right_nodes
-#     nodes_zrr <- tree_m$right_comps
-#     splits_zl <- tree_m$left_splits
-#     splits_zr <- tree_m$right_splits
-#     
+#   # replace terminal compliment nodes with residuals
+#   len_lnr <- length(nodes_zlr)
+#   len_rnr <- length(nodes_zrr)
+#   if (len_lnr > 1) {
+# 
+#     nodes_zlr[2:len_lnr] <<- r_list[2:len_lnr]
+# 
+#   }
+# 
+#   if (len_rnr > 1) {
+# 
+#     nodes_zrr[2:len_rnr] <<- r_list[(len_lnr + 2):length(r_list)]
+# 
 #   }
 #   
-#   tree_m <- tree_sims[[i]]
-#   cat('------Bayes tree draw action:', draw,
-#       '\n------Iteration', i, '/', mh_n,
-#       '\n\n')
 # }
 
 #### Bayesian backfitting additive regression tree ------------------------------
@@ -842,40 +755,39 @@ set_resdata <- function() {
 alpha <- 0.95
 beta <- 2
 
-m <- 1000
+m <- 200
 k <- 2
-sig2_mu <- 0.5/(k*sqrt(m)) 
+sig2_mu <- (0.5/(k*sqrt(m)))^2
 
 nu <- 3
 res <- resid(lm(y ~ x, data = data))
 lambda <- unname(quantile(res, 0.9))
-a <- var(res)/var(data$y)
+a <- 1/(k*sqrt(m))
 
 # define initial tree
 tree_m <- t_grow()
+d <- tree_m$depth
 
 # initialize parameter matrix and rho vector
 leaf_params <- matrix(0, nrow = m, ncol = m/min_leaf_obs)
 rho_vec <- NA
 
 # initialize likelihood from base tree, 
-treedata <- get_treedata(1)
-all_y <- treedata$all_y
-y_list <- treedata$y_list
-n_tn <- treedata$n_tns
-n_vec <- treedata$n_vec
-mu <- treedata$mu
+treedata_m <- get_treedata(1)
+y_list <- treedata_m$y_list
+n_tn <- treedata_m$n_tns
+n_vec <- treedata_m$n_vec
+mu <- 0
 loglik_m <- loglik(n_vec, y_list, mu, n_tn)
 
 # get initial residuals and updated mu for tree_mp1
-r_list <- treedata$r_list
+r_list <- treedata_m$r_list
 
 # update response data to current residuals
-set_resdata()
 
 # initialize tree sim list
 tree_sims <- list(tree_m)
-treedata_list <- list(treedata)
+treedata_list <- list(treedata_m)
 
 # MH implementation
 for (i in 2:m) {
@@ -906,16 +818,15 @@ for (i in 2:m) {
   }
   
   # get new tree data
-  treedata <- get_treedata(i)
-  all_y <- treedata$all_y
-  y_list <- treedata$y_list
-  n_tn <- treedata$n_tns
-  n_vec <- treedata$n_vec
-  r_list <- treedata$r_list
-  mu <- treedata$mu
+  treedata_mp1 <- get_treedata(i)
+  # all_y <- treedata_mp1$all_y
+  # y_list <- treedata_mp1$y_list
+  n_tn <- treedata_mp1$n_tns
+  n_vec <- treedata_mp1$n_vec
+  r_list <- treedata_mp1$r_list
   loglik_mp1 <- loglik(n_vec, r_list, mu, n_tn)
   
-  treedata_list[[i]] <- treedata
+  #treedata_list[[i]] <- treedata
   
   # tree_mp1 acceptance parameter 
   rho <- rho_draw(g_kern, p_kern, loglik_mp1, loglik_m, draw)
@@ -924,11 +835,9 @@ for (i in 2:m) {
   if (rho == 1) {
     
     # T* = tree_mp1, store tree_mp1 data from above
-    # compute residuals for next iter
-    set_resdata()
-    
     # store tree_mp1 as tree_m
     tree_sims[[i]] <- tree_mp1
+    treedata_list[[i]] <- treedata_mp1
     
     # store updated likelihood value as mth iter likelihood
     loglik_m <- loglik_mp1
@@ -940,6 +849,7 @@ for (i in 2:m) {
       
       # T* = tree_m
       tree_sims[[i]] <- tree_m
+      treedata_list[[i]] <- treedata_list[[i - 1]]
       
       # cancel drawn parameters for unaccepted tree
       leaf_params[i, ] <- 0
@@ -949,7 +859,8 @@ for (i in 2:m) {
       
     }
   
-  tree_m <- tree_sims[[i]]
+  # tree_m <- tree_sims[[i]]
+  # d <- tree_m$depth
   
   cat('------Bayes tree draw action:', draw,
       '\n------Iteration', i, '/', m,
@@ -1208,9 +1119,9 @@ for (i in 1:lrparams) {
 
 plot(data$x, data$org_y, xlab = 'x', ylab = 'y')
 points(data[data$z < 0.5, 'x'], data[data$z < 0.5, 'yfit'],
-       col = 'red', pch = 19, cex = 0.75)
+       col = 'red', pch = 19, cex = 1)
 points(data[data$z > 0.5, 'x'], data[data$z > 0.5, 'yfit'],
-       col = 'blue', pch = 19, cex = 0.75)
+       col = 'blue', pch = 19, cex = 1)
 title(main = 'Generated Treatment Data and BART Prediction')
 legend("topleft", pch = 19, col = c('blue', 'red'), box.lty = 0,
        legend = c('Yhat | Z = 1', 'Yhat | Z = 0'))
@@ -1219,5 +1130,4 @@ legend("topleft", pch = 19, col = c('blue', 'red'), box.lty = 0,
 
 
 
-
-
+###
